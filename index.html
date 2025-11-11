@@ -332,6 +332,17 @@
   $('#target').addEventListener('input', recalc);
   $('#futureAssume').addEventListener('input', recalc);
   $('#whatIf').addEventListener('input', recalc);
+  // --- Initialization: Always load default rows ---
+  (function init(){
+  // Always load defaults fresh every page load
+  setRowsData([
+    {name:'Assignments', weight:'20', earned:'', possible:'', planned:'', future:''},
+    {name:'Project', weight:'30', earned:'', possible:'', planned:'', future:''},
+    {name:'Quizzes/Exams', weight:'40', earned:'', possible:'', planned:'', future:''},
+    {name:'Participation', weight:'10', earned:'', possible:'', planned:'', future:''},
+  ]);
+})();
+
 </script>
 </body>
 </html>
