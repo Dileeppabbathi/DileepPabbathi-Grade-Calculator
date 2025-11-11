@@ -10,10 +10,11 @@
     --brand:#6d7cff;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font:500 15px/1.55 system-ui,Segoe UI,Inter,Arial}
+  body{margin:0;background:var(--bg);color:var(--text);font:500 15px/1.55 system-ui,Segoe UI,Inter,Arial,sans-serif}
   .container{max-width:1100px;margin:40px auto;padding:0 16px}
   h1{margin:0 0 6px;font-weight:800;text-align:center}
   p.muted{margin:.25rem 0 1rem;color:var(--muted);text-align:center}
+
   .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center}
   label{font-weight:600}
@@ -23,7 +24,8 @@
   .btn:hover{border-color:#3b4161;transform:translateY(-1px)}
   .primary{background:linear-gradient(135deg,var(--brand),#9b6dff);border-color:transparent;color:#fff}
   .danger{border-color:#5b1f26;background:#251015;color:#fff}
-  .ghost{background:#1a1b2b;border:1px solid #343a5a}
+  .ghost{background:#1a1b2b;border:1px solid #343a5a;color:#cfd3e6}
+
   table{width:100%;border-collapse:collapse;border-spacing:0}
   th,td{border-top:1px solid var(--line);padding:10px 8px;text-align:left}
   th{font-weight:700;color:#cfd3e6;background:#121425;position:sticky;top:0;z-index:1;text-align:center}
@@ -35,28 +37,31 @@
   .del-btn{background:none;border:none;cursor:pointer;font-size:18px;color:#f87171;padding:4px 8px;transition:transform .2s,color .2s}
   .del-btn:hover{transform:scale(1.2);color:#ef4444}
 
-  /* Projections columns/panels are hidden until enabled */
-  .projCol, .projPanel { display:none; }
-  .projections-on .projCol, .projections-on .projPanel { display:table-cell; }
-  .projections-on .projPanel.block { display:block; }
+  /* Hide all projection-related UI until unlocked */
+  .projCol, .projPanel, .projBtn { display:none; }
+  .projections-ready .projBtn { display:inline-block; } /* show "Show Planning Tools" after first Calculate */
+  .projections-on .projCol { display:table-cell; }
+  .projections-on .projPanel { display:block; }
 </style>
 </head>
 <body>
 <div class="container">
   <h1>Weighted Grade Planner</h1>
   <p class="muted">
-    <b>Step 1:</b> Enter <i>Weight, Earned, Out of</i> → click <b>Calculate</b> to see your <b>current grade</b>.<br/>
-    <b>Step 2 (optional):</b> Click <b>Enable Projections</b> to plan what you need on remaining work.
+    <b>Step 1:</b> Enter <i>Weight, Earned, Out of</i> → click <b>Calculate</b> to see your current grade.<br/>
+    <b>Step 2:</b> After you calculate, you can reveal planning tools to project what you need on remaining work.
   </p>
 
-  <!-- Controls -->
+  <!-- Basic controls (always visible) -->
   <div class="panel">
     <div class="row">
       <button class="btn" id="addRow">+ Add Category</button>
       <button class="btn primary" id="calculate">Calculate</button>
-      <button class="btn ghost" id="enableProj" disabled>Enable Projections</button>
       <button class="btn" id="resetMarks">Reset</button>
       <button class="btn danger" id="clearAll">Clear ALL</button>
+
+      <!-- This button appears only AFTER first Calculate -->
+      <button class="btn ghost projBtn" id="showProj">Show Planning Tools</button>
     </div>
   </div>
 
@@ -72,9 +77,11 @@
           <th class="right">% so far</th>
           <th class="right">Weighted %</th>
 
+          <!-- Hidden until projections are enabled -->
           <th class="right projCol">Planned Total</th>
           <th class="right projCol">Future %</th>
           <th class="right projCol">Projected Cat %</th>
+
           <th class="right">🗑</th>
         </tr>
       </thead>
@@ -97,14 +104,14 @@
     </table>
   </div>
 
-  <!-- Current result -->
+  <!-- Current result (always visible) -->
   <div class="panel" style="text-align:center">
     <h3>Current Weighted Grade: <span id="finalNow" class="ok">0%</span></h3>
     <div class="mutedSmall">Based only on what’s graded so far.</div>
   </div>
 
-  <!-- Projections panel (hidden until enabled) -->
-  <div class="panel projPanel block" id="projControls">
+  <!-- Projections panel (revealed only after user clicks "Show Planning Tools") -->
+  <div class="panel projPanel" id="projControls">
     <div class="row">
       <label>Target final:</label>
       <input id="target" type="number" min="0" max="100" step="0.1" value="90" style="width:120px"> %
@@ -137,14 +144,14 @@
 </div>
 
 <script>
-/* ------------- helpers ------------- */
+/* ---------- helpers ---------- */
 const $=(s,d=document)=>d.querySelector(s);
 const $$=(s,d=document)=>Array.from(d.querySelectorAll(s));
 const pct=v=>isFinite(v)?(v*100).toFixed(2)+'%':'—';
 const toNum=v=>{const s=String(v??'').trim(); if(!s) return NaN; return parseFloat(s);};
 const parseWeight=raw=>{const s=String(raw??'').trim(); if(!s) return 0; return s.endsWith('%')? parseFloat(s)/100 : parseFloat(s)/100;};
 
-/* ------------- rows ------------- */
+/* ---------- rows ---------- */
 function rowTemplate(d={}){
   const tr=document.createElement('tr');
   tr.innerHTML=`
@@ -155,9 +162,11 @@ function rowTemplate(d={}){
     <td class="right"><span class="sofar">—</span></td>
     <td class="right"><span class="weightedNow">—</span></td>
 
+    <!-- hidden until projections-on -->
     <td class="right projCol"><input inputmode="decimal" placeholder="planned total" value="${d.planned||''}"></td>
     <td class="right projCol"><input inputmode="decimal" placeholder="future %" value="${d.future||''}"></td>
     <td class="right projCol"><span class="projCat">—</span></td>
+
     <td class="right"><button class="del-btn" title="Delete Row">🗑</button></td>`;
   tr.querySelector('.del-btn').addEventListener('click',()=>{tr.remove();});
   return tr;
@@ -167,7 +176,7 @@ function setRowsData(arr){
   arr.forEach(d=>$('#rows').appendChild(rowTemplate(d)));
 }
 
-/* ------------- Step 1: current-only calculation ------------- */
+/* ---------- Step 1: current-only calculation ---------- */
 function getRowsCurrent(){
   return $$('#rows tr').map(tr=>{
     const [nameI, wtI, eI, pI] = tr.querySelectorAll('input');
@@ -197,7 +206,7 @@ function calcCurrent(){
   return {weightSum, weightedSum};
 }
 
-/* ------------- Step 2: projections (enabled after first calculate) ------------- */
+/* ---------- Step 2: projections (revealed after first calculate) ---------- */
 function getRowsProjection(){
   return $$('#rows tr').map(tr=>{
     const [nameI, wtI, eI, pI, /* %sofar */, /* weightedNow */,
@@ -270,46 +279,40 @@ function calcProjections(){
 
   const wif = toNum($('#whatIf').value);
   $('#whatIfEcho').textContent = (wif||0).toFixed(0)+'%';
-  const alt = (()=>{ // what-if recompute
-    let pw=0, wc=0, wr=0;
-    rows.forEach((r)=>{
-      const w=isFinite(r.weight)?r.weight:0;
-      const e=isFinite(r.earned)?r.earned:0;
-      const p=isFinite(r.possible)?r.possible:0;
-      const t=isFinite(r.planned)&&r.planned>0?r.planned:(isFinite(p)?p:0);
-      const remain=Math.max(t-(isFinite(p)?p:0),0);
-      const sofar=(p>0)?(e/p):NaN;
-      const fut=(isFinite(wif)?wif/100:0);
-      const proj=t>0?((e+fut*remain)/t):(isFinite(sofar)?sofar:0);
+  // quick what-if recompute
+  let alt=0;
+  rows.forEach((r)=>{
+    const w=isFinite(r.weight)?r.weight:0;
+    const e=isFinite(r.earned)?r.earned:0;
+    const p=isFinite(r.possible)?r.possible:0;
+    const t=isFinite(r.planned)&&r.planned>0?r.planned:(isFinite(p)?p:0);
+    const remain=Math.max(t-(isFinite(p)?p:0),0);
+    const sofar=(p>0)?(e/p):NaN;
+    const fut=(isFinite(wif)?wif/100:0);
+    const proj=t>0?((e+fut*remain)/t):(isFinite(sofar)?sofar:0);
+    alt += w*proj;
+  });
+  $('#whatIfResult').textContent = pct(alt);
+  $('#whatIfResult').className = (alt>=0.9)?'ok':(alt>=0.8?'warn':'err');
 
-      pw += w*proj;
-      wc += (t>0 && p>0)? w*(e/t):0;
-      wr += (t>0)? w*(remain/t):0;
-    });
-    return {projectedWeighted:pw, weightedCurrent:wc, weightedRemaining:wr};
-  })();
-
-  $('#whatIfResult').textContent = pct(alt.projectedWeighted);
-  $('#whatIfResult').className = (alt.projectedWeighted>=0.9)?'ok':(alt.projectedWeighted>=0.8?'warn':'err');
-
-  const band = alt.projectedWeighted>=0.9?'A (≥90%)'
-              : alt.projectedWeighted>=0.8?'B (80–89%)'
-              : alt.projectedWeighted>=0.7?'C (70–79%)'
+  const band = alt>=0.9?'A (≥90%)'
+              : alt>=0.8?'B (80–89%)'
+              : alt>=0.7?'C (70–79%)'
               : 'below C';
   $('#bandWarn').innerHTML = `At ${wif.toFixed(0)}% on remaining work, you’re tracking a <b>${band}</b>.`;
 }
 
-/* ------------- buttons ------------- */
+/* ---------- buttons ---------- */
 $('#addRow').addEventListener('click',()=>{$('#rows').appendChild(rowTemplate());});
 $('#calculate').addEventListener('click',()=>{
-  const r = calcCurrent();
-  // after first successful calc, allow projections
-  $('#enableProj').disabled = false;
+  calcCurrent();
+  // Unlock the "Show Planning Tools" button after first calculation
+  document.body.classList.add('projections-ready');
 });
 $('#resetMarks').addEventListener('click',()=>{
   $$('#rows tr').forEach(tr=>{
     const inputs=tr.querySelectorAll('input');
-    inputs.forEach((i,idx)=>{ if(idx>0) i.value=''; }); // keep names, clear numbers
+    inputs.forEach((i,idx)=>{ if(idx>0) i.value=''; });
     tr.querySelector('.sofar').textContent='—';
     tr.querySelector('.weightedNow').textContent='—';
     const pc = tr.querySelector('.projCat'); if(pc) pc.textContent='—';
@@ -317,18 +320,25 @@ $('#resetMarks').addEventListener('click',()=>{
   $('#weightSum').textContent='0%';
   $('#weightedNow').textContent='0%';
   $('#finalNow').textContent='0%';
+  // Hide planning tools again
+  document.body.classList.remove('projections-ready','projections-on');
 });
 $('#clearAll').addEventListener('click',()=>{
-  if(confirm('Clear all rows?')){$('#rows').innerHTML='';$('#finalNow').textContent='0%';$('#weightSum').textContent='0%';$('#weightedNow').textContent='0%';}
+  if(confirm('Clear all rows?')){
+    $('#rows').innerHTML='';
+    $('#finalNow').textContent='0%';
+    $('#weightSum').textContent='0%';
+    $('#weightedNow').textContent='0%';
+    document.body.classList.remove('projections-ready','projections-on');
+  }
 });
-$('#enableProj').addEventListener('click',()=>{
+$('#showProj').addEventListener('click',()=>{
   document.body.classList.add('projections-on');
-  // Show the projections panel (it’s hidden by CSS until class is set)
 });
 $('#calcProj').addEventListener('click', calcProjections);
 $('#whatIf').addEventListener('input', ()=>{ if(document.body.classList.contains('projections-on')) calcProjections(); });
 
-/* ------------- defaults ------------- */
+/* ---------- defaults ---------- */
 (function init(){
   setRowsData([
     {name:'Assignments',weight:'20',earned:'',possible:'',planned:'',future:''},
@@ -339,6 +349,6 @@ $('#whatIf').addEventListener('input', ()=>{ if(document.body.classList.contains
 })();
 </script>
 
-<div style="position:fixed;right:12px;bottom:12px;font:12px system-ui;opacity:.5">Build: 10</div>
+<div style="position:fixed;right:12px;bottom:12px;font:12px system-ui;opacity:.5">Build: 11</div>
 </body>
 </html>
